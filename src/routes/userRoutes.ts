@@ -1,60 +1,104 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import pool from "../../db/pool";
+import { clerkAuth } from "../middleware/clerkAuth";
 
 const router = Router();
 
-// fetch all users
-router.get("/", async (_req, res) => {
+/**
+ * ---------------------------
+ * PROFILE
+ * GET /api/users -> current user's profile
+ * ---------------------------
+ */
+router.get("/", clerkAuth(), async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT id, name, email, createdAt, updatedAt FROM User"
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Database query failed" });
-  }
-});
+    const userId = (req as any).clerkId;
 
-// fetch single user
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
     const [rows] = await pool.query(
-      "SELECT id, name, email, createdAt, updatedAt FROM User WHERE id = ?",
-      [id]
+      "SELECT id, name, email, createdAt, updatedAt FROM `User` WHERE id = ?",
+      [userId]
     );
+
     const user = (rows as any[])[0];
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
     res.json(user);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching profile:", err);
     res.status(500).json({ error: "Database query failed" });
   }
 });
 
-// fetch the most recent workout
-router.get("/:id/last-workout", async (req, res) => {
+/**
+ * ---------------------------
+ * WORKOUTS
+ * GET /api/users/workouts -> workout history
+ * ---------------------------
+ */
+router.get("/workouts", clerkAuth(), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const userId = (req as any).clerkId;
+
     const [rows] = await pool.query(
-      "SELECT * FROM Workout WHERE userId = ? ORDER BY createdAt DESC LIMIT 1",
-      [id]
+      "SELECT * FROM Workout WHERE userId = ? ORDER BY createdAt DESC",
+      [userId]
     );
-    const workout = (rows as any[])[0];
-    if (!workout)
+
+    if ((rows as any[]).length === 0) {
       return res.status(404).json({ error: "No workouts found for this user" });
-    res.json(workout);
+    }
+
+    res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching workouts:", err);
     res.status(500).json({ error: "Database query failed" });
   }
 });
 
-// create a new template
-router.post("/:id/templates", async (req, res) => {
+/**
+ * ---------------------------
+ * WORKOUTS - last
+ * GET /api/users/last-workout -> most recent workout
+ * ---------------------------
+ */
+router.get(
+  "/last-workout",
+  clerkAuth(),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).clerkId;
+
+      const [rows] = await pool.query(
+        "SELECT * FROM Workout WHERE userId = ? ORDER BY createdAt DESC LIMIT 1",
+        [userId]
+      );
+
+      const workout = (rows as any[])[0];
+      if (!workout) {
+        return res
+          .status(404)
+          .json({ error: "No workouts found for this user" });
+      }
+
+      res.json(workout);
+    } catch (err) {
+      console.error("Error fetching last workout:", err);
+      res.status(500).json({ error: "Database query failed" });
+    }
+  }
+);
+
+/**
+ * ---------------------------
+ * TEMPLATES
+ * POST /api/users/templates -> create template
+ * ---------------------------
+ */
+router.post("/templates", clerkAuth(), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params; // user ID
+    const userId = (req as any).clerkId;
     const { name, exercises } = req.body;
 
     if (!name || !exercises) {
@@ -63,7 +107,7 @@ router.post("/:id/templates", async (req, res) => {
 
     const [result] = await pool.query(
       "INSERT INTO Template (userId, name, exercises) VALUES (?, ?, ?)",
-      [id, name, JSON.stringify(exercises)]
+      [userId, name, JSON.stringify(exercises)]
     );
 
     const insertId = (result as any).insertId;
@@ -73,41 +117,28 @@ router.post("/:id/templates", async (req, res) => {
 
     res.status(201).json((rows as any[])[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Error inserting template:", err);
     res.status(500).json({ error: "Database insert failed" });
   }
 });
 
-// fetch all templates for a user
-router.get("/:id/templates", async (req, res) => {
+/**
+ * ---------------------------
+ * TEMPLATES
+ * GET /api/users/templates -> fetch all templates
+ * ---------------------------
+ */
+router.get("/templates", clerkAuth(), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const userId = (req as any).clerkId;
+
     const [rows] = await pool.query("SELECT * FROM Template WHERE userId = ?", [
-      id,
+      userId,
     ]);
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Database query failed" });
-  }
-});
-
-// fetch full workout history for a user
-router.get("/:id/workouts", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const [rows] = await pool.query(
-      "SELECT * FROM Workout WHERE userId = ? ORDER BY createdAt DESC",
-      [id]
-    );
-
-    if ((rows as any[]).length === 0) {
-      return res.status(404).json({ error: "No workouts found for this user" });
-    }
 
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching templates:", err);
     res.status(500).json({ error: "Database query failed" });
   }
 });
